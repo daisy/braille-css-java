@@ -100,7 +100,7 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 	                           boolean allowUnknownVendorExtensions) {
 		// SupportedCSSImpl is defined at the bottom of this file
 		// it is a separate class because we need an argument to pass to the constructor of DeclarationTransformer
-		super(new SupportedCSSImpl(allowComponentProperties, allowShorthandProperties, extensions));
+		super(new SupportedCSSImpl(allowComponentProperties, allowShorthandProperties, prefix, extensions));
 		this.methods = parsingMethods(extensions);
 		this.extensions = new ArrayList<>();
 		for (BrailleCSSExtension x : extensions)
@@ -117,6 +117,8 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 		this.allowUnknownVendorExtensions = false;
 	}
 
+	private static final String prefix = "-daisy-"; // optional prefix for properties that are
+	                                                // not standard CSS and not extensions
 	protected final Collection<BrailleCSSExtension> extensions;
 	protected final boolean allowUnknownVendorExtensions;
 
@@ -165,36 +167,109 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 			throw new IllegalStateException("parseDeclaration() method must be overridden");
 		String property = d.getProperty().toLowerCase();
 		if (property.startsWith("-")) {
-			for (BrailleCSSExtension x : extensions)
-				if (property.startsWith(x.getPrefix())) {
-					if (!x.isSupportedCSSProperty(property)) {
-						log.debug("Ignoring unsupported property: " + property);
-						return false;
-					} else if (x.parseDeclaration(d, properties, values)) {
-						return true;
-					} else {
-						log.warn("Ignoring unsupported declaration: " + declarationToString(d));
+			if (property.startsWith(prefix)) {
+				if (css.isSupportedCSSProperty(property.substring(prefix.length()))) {
+					// normalize property name
+					d.setProperty(property.substring(prefix.length()));
+					try {
+						return parseDeclaration(
+							d,
+							new ForwardingMap<String,CSSProperty>() {
+								@Override
+								protected Map<String,CSSProperty> delegate() {
+									return properties;
+								}
+								@Override
+								public CSSProperty put(String propertyName, CSSProperty value) {
+									// some properties are allowed to have a prefix,
+									// some properties should not have a prefix (warning),
+									// some properties are not allowed to have a prefix (ignored)
+									if (value instanceof AbsoluteMargin ||
+									    value instanceof BorderWidth ||
+									    value instanceof BorderStyle ||
+									    value instanceof Content ||
+									    value instanceof Display ||
+									    value instanceof HyphenateCharacter ||
+									    value instanceof Hyphens ||
+									    value instanceof LetterSpacing ||
+									    value instanceof LineHeight ||
+									    value instanceof ListStyleType ||
+									    value instanceof Margin ||
+									    value instanceof MaxHeight ||
+									    value instanceof Orphans ||
+									    value instanceof Padding ||
+									    value instanceof Page ||
+									    value instanceof Size ||
+									    value instanceof TextIndent ||
+									    value instanceof WhiteSpace ||
+									    value instanceof Widows ||
+									    value instanceof WordSpacing ||
+									    !(value instanceof BrailleCSSProperty)
+									) {
+										log.warn("Ignoring unsupported property: {}{}", prefix, propertyName);
+										throw new IllegalArgumentException();
+									} else if (// property from official WD spec that is not implemented in browsers
+									           value instanceof StringSet ||
+									           // properties that can only occur inside @-daisy-volume rules
+									           value instanceof MaxLength ||
+									           value instanceof MinLength
+									) {
+										log.warn("Unexpected prefix '{}' in '{}{}', assuming '{}' was meant",
+										         prefix, prefix, propertyName, propertyName);
+									} else {
+										// BorderAlign
+										// BorderPattern
+										// BrailleCharset
+										// Flow
+										// RenderTableBy
+										// TableHeaderPolicy
+										// TextTransform
+										// VolumeBreak
+										// VolumeBreakInside
+									}
+									return super.put(propertyName, value);
+								}
+							},
+							values);
+					} catch (IllegalArgumentException e) {
 						return false;
 					}
+				} else {
+					log.warn("Ignoring unsupported declaration: " + declarationToString(d));
+					return false;
 				}
-			if (!allowUnknownVendorExtensions) {
-				log.debug("Ignoring unsupported property: " + property);
+			} else {
+				for (BrailleCSSExtension x : extensions)
+					if (property.startsWith(x.getPrefix())) {
+						if (!x.isSupportedCSSProperty(property)) {
+							log.debug("Ignoring unsupported property: " + property);
+							return false;
+						} else if (x.parseDeclaration(d, properties, values)) {
+							return true;
+						} else {
+							log.warn("Ignoring unsupported declaration: " + declarationToString(d));
+							return false;
+						}
+					}
+				if (!allowUnknownVendorExtensions) {
+					log.debug("Ignoring unsupported property: " + property);
+					return false;
+				}
+				if (d.size() == 1) {
+					Term<?> term = d.get(0);
+					if (term instanceof TermIdent)
+						return genericProperty(GenericVendorCSSPropertyProxy.class, (TermIdent)term,
+						                       ALLOW_INH, properties, property);
+					else if (term instanceof TermInteger)
+						return genericTerm(TermInteger.class, term, d.getProperty(),
+						                   GenericVendorCSSPropertyProxy.valueOf(null), false, properties, values);
+					else if (term instanceof TermFunction)
+						return genericTerm(TermFunction.class, term, d.getProperty(),
+						                   GenericVendorCSSPropertyProxy.valueOf(null), false, properties, values);
+				}
+				log.warn("Ignoring unsupported declaration: " + declarationToString(d));
 				return false;
 			}
-			if (d.size() == 1) {
-				Term<?> term = d.get(0);
-				if (term instanceof TermIdent)
-					return genericProperty(GenericVendorCSSPropertyProxy.class, (TermIdent)term,
-					                       ALLOW_INH, properties, property);
-				else if (term instanceof TermInteger)
-					return genericTerm(TermInteger.class, term, d.getProperty(),
-					                   GenericVendorCSSPropertyProxy.valueOf(null), false, properties, values);
-				else if (term instanceof TermFunction)
-					return genericTerm(TermFunction.class, term, d.getProperty(),
-					                   GenericVendorCSSPropertyProxy.valueOf(null), false, properties, values);
-			}
-			log.warn("Ignoring unsupported declaration: " + declarationToString(d));
-			return false;
 		}
 		if (css.isSupportedCSSProperty(property)) {
 			try {
@@ -463,9 +538,37 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 				list.add(t);
 				continue;
 			} else if (t instanceof TermFunction) {
-				String funcName = ((TermFunction)t).getFunctionName();
-				if (validContentFuncNames.contains(funcName.toLowerCase())) {
-					list.add(t);
+				TermFunction f = (TermFunction)t;
+				String funcName = f.getFunctionName();
+				boolean normalize = false;
+				if (funcName.startsWith(prefix)) {
+					funcName = funcName.substring(prefix.length());
+					normalize = true;
+				}
+				if (validContentFuncNames.contains(funcName)) {
+					if (normalize) {
+						if (// features from WD spec that are not implemented in browsers
+						    "content".equals(funcName) ||
+						    "string".equals(funcName) ||
+						    "target-text".equals(funcName) ||
+						    "target-counter".equals(funcName) ||
+						    ("leader".equals(funcName) && f.size() == 1)) {
+							f = f.setFunctionName(funcName);
+							log.warn("Unexpected prefix '{}' in value '{}{}', assuming '{}' was meant",
+							         prefix, prefix, f.toString().trim(), f.toString().trim());
+						} else if ("flow".equals(funcName) ||
+						           "leader".equals(funcName) || // assume 2 or 3 arguments
+						           "target-content".equals(funcName) ||
+						           "target-string".equals(funcName)) {
+							f = f.setFunctionName(funcName);
+						} else {
+							// attr
+							// counter
+							// counters
+							return false;
+						}
+					}
+					list.add(f);
 					continue;
 				}
 			}
@@ -493,8 +596,8 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 		}
 		if (list.isEmpty())
 			return false;
-		properties.put("content", Content.content_list);
-		values.put("content", list);
+		properties.put(d.getProperty(), Content.content_list);
+		values.put(d.getProperty(), list);
 		return true;
 	}
 
@@ -739,8 +842,8 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 				return false;
 		if (list.isEmpty())
 			return false;
-		properties.put("render-table-by", RenderTableBy.axes);
-		values.put("render-table-by", list);
+		properties.put(d.getProperty(), RenderTableBy.axes);
+		values.put(d.getProperty(), list);
 		return true;
 	}
 
@@ -773,8 +876,8 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 		TermList size = tf.createList(2);
 		size.add(width);
 		size.add(height);
-		properties.put("size", Size.integer_pair);
-		values.put("size", size);
+		properties.put(d.getProperty(), Size.integer_pair);
+		values.put(d.getProperty(), size);
 		return true;
 	}
 
@@ -816,8 +919,8 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 		TermPair pair = tf.createPair(stringName, contentList);
 		if (!first) pair.setOperator(Term.Operator.COMMA);
 		list.add(pair);
-		properties.put("string-set", StringSet.list_values);
-		values.put("string-set", list);
+		properties.put(d.getProperty(), StringSet.list_values);
+		values.put(d.getProperty(), list);
 		return true;
 	}
 
@@ -869,8 +972,8 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 		}
 		if (list.isEmpty())
 			return false;
-		properties.put("text-transform", TextTransform.list_values);
-		values.put("text-transform", list);
+		properties.put(d.getProperty(), TextTransform.list_values);
+		values.put(d.getProperty(), list);
 		return true;
 	}
 
@@ -900,8 +1003,8 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 						for (BrailleCSSExtension x : extensions)
 							if (funcName.startsWith(x.getPrefix()))
 								return false;
-						properties.put("volume-break-inside", VolumeBreakInside.custom);
-						values.put("volume-break-inside", term);
+						properties.put(d.getProperty(), VolumeBreakInside.custom);
+						values.put(d.getProperty(), term);
 						return true;
 					}
 				}
@@ -1291,9 +1394,10 @@ class SupportedCSSImpl implements SupportedCSS {
 	private Map<String, Integer> ordinals;
 	private Map<Integer, String> ordinalsRev;
 
-	SupportedCSSImpl(boolean allowComponentProperties, boolean allowShorthandProperties, Collection<BrailleCSSExtension> extensions) {
+	SupportedCSSImpl(boolean allowComponentProperties, boolean allowShorthandProperties,
+	                 String prefix, Collection<BrailleCSSExtension> extensions) {
 		this.TOTAL_SUPPORTED_DECLARATIONS = 70 + 2 * extensions.stream().mapToInt(BrailleCSSExtension::getTotalProperties).sum();
-		this.setSupportedCSS(allowComponentProperties, allowShorthandProperties, extensions);
+		this.setSupportedCSS(allowComponentProperties, allowShorthandProperties, prefix, extensions);
 		this.setOridinals();
 	}
 
@@ -1375,7 +1479,8 @@ class SupportedCSSImpl implements SupportedCSS {
 			defaultCSSvalues.put(name, defaultValue);
 	}
 
-	private void setSupportedCSS(boolean allowComponentProperties, boolean allowShorthandProperties, Collection<BrailleCSSExtension> extensions) {
+	private void setSupportedCSS(boolean allowComponentProperties, boolean allowShorthandProperties,
+	                             String prefix, Collection<BrailleCSSExtension> extensions) {
 
 		supportedCSSproperties = new HashSet<String>(TOTAL_SUPPORTED_DECLARATIONS, 1.0f);
 		defaultCSSproperties = new HashMap<String, CSSProperty>(TOTAL_SUPPORTED_DECLARATIONS, 1.0f);
