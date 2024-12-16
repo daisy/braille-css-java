@@ -101,6 +101,7 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 		// SupportedCSSImpl is defined at the bottom of this file
 		// it is a separate class because we need an argument to pass to the constructor of DeclarationTransformer
 		super(new SupportedCSSImpl(allowComponentProperties, allowShorthandProperties, prefix, extensions));
+		this.allowShorthandProperties = allowShorthandProperties;
 		this.methods = parsingMethods(extensions);
 		this.extensions = new ArrayList<>();
 		for (BrailleCSSExtension x : extensions)
@@ -113,12 +114,14 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 
 	protected SupportedBrailleCSS(SupportedCSS css) {
 		super(css);
+		this.allowShorthandProperties = false;
 		this.extensions = null;
 		this.allowUnknownVendorExtensions = false;
 	}
 
 	private static final String prefix = "-daisy-"; // optional prefix for properties that are
 	                                                // not standard CSS and not extensions
+	private final boolean allowShorthandProperties;
 	protected final Collection<BrailleCSSExtension> extensions;
 	protected final boolean allowUnknownVendorExtensions;
 
@@ -186,7 +189,6 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 									// some properties are not allowed to have a prefix (ignored)
 									if (value instanceof AbsoluteMargin ||
 									    value instanceof BorderWidth ||
-									    value instanceof BorderStyle ||
 									    value instanceof Content ||
 									    value instanceof Display ||
 									    value instanceof HyphenateCharacter ||
@@ -212,13 +214,17 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 									           value instanceof StringSet ||
 									           // properties that can only occur inside @-daisy-volume rules
 									           value instanceof MaxLength ||
-									           value instanceof MinLength
+									           value instanceof MinLength ||
+									           // property that should only be prefixed when the value is a dot pattern
+									           // or "none" (i.e. when the property is an alias for border-*-pattern)
+									           value == BorderStyle.SOLID
 									) {
 										log.warn("Unexpected prefix '{}' in '{}{}', assuming '{}' was meant",
 										         prefix, prefix, propertyName, propertyName);
 									} else {
 										// BorderAlign
 										// BorderPattern
+										// BorderStyle
 										// BrailleCharset
 										// Flow
 										// RenderTableBy
@@ -387,7 +393,22 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 	@SuppressWarnings("unused")
 	private boolean processBorderBottomStyle(Declaration d,
 			Map<String, CSSProperty> properties, Map<String, Term<?>> values) {
-		return genericOneIdent(BorderStyle.class, d, properties);
+		if (d.size() != 1)
+			return false;
+		Term<?> term = d.get(0);
+		boolean rv = false;
+		if (genericTermIdent(BorderStyle.class, term, ALLOW_INH, d.getProperty(), properties))
+			rv = true;
+		if (allowShorthandProperties) {
+			String borderPatternName = "border-bottom-pattern";
+			if (genericTermIdent(
+			        BorderPattern.class, term, ALLOW_INH, borderPatternName, properties)
+			    || genericTermDotPattern(
+			           term, BorderPattern.dot_pattern, borderPatternName,
+			           properties, values))
+				rv = true;
+		}
+		return rv;
 	}
 
 	@SuppressWarnings("unused")
@@ -421,7 +442,22 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 	@SuppressWarnings("unused")
 	private boolean processBorderLeftStyle(Declaration d,
 			Map<String, CSSProperty> properties, Map<String, Term<?>> values) {
-		return genericOneIdent(BorderStyle.class, d, properties);
+		if (d.size() != 1)
+			return false;
+		Term<?> term = d.get(0);
+		boolean rv = false;
+		if (genericTermIdent(BorderStyle.class, term, ALLOW_INH, d.getProperty(), properties))
+			rv = true;
+		if (allowShorthandProperties) {
+			String borderPatternName = "border-left-pattern";
+			if (genericTermIdent(
+			        BorderPattern.class, term, ALLOW_INH, borderPatternName, properties)
+			    || genericTermDotPattern(
+			           term, BorderPattern.dot_pattern, borderPatternName,
+			           properties, values))
+				rv = true;
+		}
+		return rv;
 	}
 
 	@SuppressWarnings("unused")
@@ -463,7 +499,22 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 	@SuppressWarnings("unused")
 	private boolean processBorderRightStyle(Declaration d,
 			Map<String, CSSProperty> properties, Map<String, Term<?>> values) {
-		return genericOneIdent(BorderStyle.class, d, properties);
+		if (d.size() != 1)
+			return false;
+		Term<?> term = d.get(0);
+		boolean rv = false;
+		if (genericTermIdent(BorderStyle.class, term, ALLOW_INH, d.getProperty(), properties))
+			rv = true;
+		if (allowShorthandProperties) {
+			String borderPatternName = "border-right-pattern";
+			if (genericTermIdent(
+			        BorderPattern.class, term, ALLOW_INH, borderPatternName, properties)
+			    || genericTermDotPattern(
+			           term, BorderPattern.dot_pattern, borderPatternName,
+			           properties, values))
+				rv = true;
+		}
+		return rv;
 	}
 
 	@SuppressWarnings("unused")
@@ -476,7 +527,7 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 	@SuppressWarnings("unused")
 	private boolean processBorderStyle(Declaration d,
 			Map<String, CSSProperty> properties, Map<String, Term<?>> values) {
-		Repeater r = new BorderStyleRepeater();
+		Repeater r = new BorderStyleRepeater(true);
 		return r.repeatOverFourTermDeclaration(d, properties, values);
 	}
 
@@ -505,7 +556,22 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 	@SuppressWarnings("unused")
 	private boolean processBorderTopStyle(Declaration d,
 			Map<String, CSSProperty> properties, Map<String, Term<?>> values) {
-		return genericOneIdent(BorderStyle.class, d, properties);
+		if (d.size() != 1)
+			return false;
+		Term<?> term = d.get(0);
+		boolean rv = false;
+		if (genericTermIdent(BorderStyle.class, term, ALLOW_INH, d.getProperty(), properties))
+			rv = true;
+		if (allowShorthandProperties) {
+			String borderPatternName = "border-top-pattern";
+			if (genericTermIdent(
+			        BorderPattern.class, term, ALLOW_INH, borderPatternName, properties)
+			    || genericTermDotPattern(
+			           term, BorderPattern.dot_pattern, borderPatternName,
+			           properties, values))
+				rv = true;
+		}
+		return rv;
 	}
 
 	@SuppressWarnings("unused")
@@ -1131,20 +1197,36 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 
 	private final class BorderStyleRepeater extends Repeater {
 
-		public BorderStyleRepeater() {
+		private final boolean allowDotPatterns;
+
+		public BorderStyleRepeater(boolean allowDotPatterns) {
 			super(4, css);
 			this.type = BorderStyle.class;
 			names.add("border-top-style");
 			names.add("border-right-style");
 			names.add("border-bottom-style");
 			names.add("border-left-style");
+			this.allowDotPatterns = allowDotPatterns;
 		}
 
 		@Override
 		protected boolean operation(int i, Map<String, CSSProperty> properties,
 		                            Map<String, Term<?>> values) {
-			return genericTermIdent(BorderStyle.class, terms.get(i), ALLOW_INH, names.get(i),
-			                        properties);
+			Term<?> term = terms.get(i);
+			String propertyName = names.get(i);
+			boolean rv = false;
+			if (genericTermIdent(type, term, ALLOW_INH, propertyName, properties))
+				rv = true;
+			if (allowShorthandProperties && allowDotPatterns) {
+				String borderPatternName = propertyName.replace("style", "pattern");
+				if (genericTermIdent(
+				        BorderPattern.class, term, ALLOW_INH, borderPatternName, properties)
+				    || genericTermDotPattern(
+				           term, BorderPattern.dot_pattern, borderPatternName,
+				           properties, values))
+					rv = true;
+			}
+			return rv;
 		}
 	}
 
@@ -1228,7 +1310,7 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 			types.add(BorderAlign.class);
 			repeaters = new ArrayList<Repeater>(variants);
 			repeaters.add(new BorderWidthRepeater());
-			repeaters.add(new BorderStyleRepeater());
+			repeaters.add(new BorderStyleRepeater(false));
 			repeaters.add(new BorderAlignRepeater());
 		}
 
