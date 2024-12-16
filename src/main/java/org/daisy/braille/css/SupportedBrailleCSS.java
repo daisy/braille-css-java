@@ -432,6 +432,13 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 	}
 
 	@SuppressWarnings("unused")
+	private boolean processBorderPattern(Declaration d,
+			Map<String, CSSProperty> properties, Map<String, Term<?>> values) {
+		Repeater r = new BorderPatternRepeater();
+		return r.repeatOverFourTermDeclaration(d, properties, values);
+	}
+
+	@SuppressWarnings("unused")
 	private boolean processBorderRight(Declaration d,
 			Map<String, CSSProperty> properties, Map<String, Term<?>> values) {
 		Variator borderSide = new BorderSideVariator("right");
@@ -1046,12 +1053,15 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 		if (d.size() != 1)
 			return false;
 		Term<?> term = d.get(0);
-		if (genericTermIdent(type, term, ALLOW_INH, d.getProperty(),
-				properties))
-			return true;
+		return genericTermIdent(type, term, ALLOW_INH, d.getProperty(), properties)
+			|| genericTermDotPattern(
+				term, dotPatternIdentification, d.getProperty(), properties, values);
+	}
+
+	private boolean genericTermDotPattern(Term<?> term, CSSProperty dotPatternIdentification,
+			String propertyName, Map<String, CSSProperty> properties, Map<String, Term<?>> values) {
 		try {
 			if (TermIdent.class.isInstance(term)) {
-				String propertyName = d.getProperty();
 				TermDotPattern value = TermDotPattern.createDotPattern((TermIdent)term);
 				properties.put(propertyName, dotPatternIdentification);
 				values.put(propertyName, value);
@@ -1177,6 +1187,28 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 		}
 	}
 
+	private final class BorderPatternRepeater extends Repeater {
+
+		public BorderPatternRepeater() {
+			super(4, css);
+			this.type = BorderPattern.class;
+			names.add("border-top-pattern");
+			names.add("border-right-pattern");
+			names.add("border-bottom-pattern");
+			names.add("border-left-pattern");
+		}
+
+		@Override
+		protected boolean operation(int i, Map<String, CSSProperty> properties,
+		                            Map<String, Term<?>> values) {
+			Term<?> term = terms.get(i);
+			String propertyName = names.get(i);
+			return genericTermIdent(type, term, ALLOW_INH, propertyName, properties)
+				|| genericTermDotPattern(
+					term, BorderPattern.dot_pattern, propertyName, properties, values);
+		}
+	}
+
 	/****************************************************************
 	 * VARIATOR CLASSES
 	 ****************************************************************/
@@ -1293,18 +1325,9 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 			if (terms.size() != 1)
 				return false;
 			Term<?> t = terms.get(0);
-			if (genericTermIdent(BorderPattern.class, t, ALLOW_INH, borderPatternName, properties))
-				return true;
-			try {
-				if (TermIdent.class.isInstance(t)) {
-					TermDotPattern value = TermDotPattern.createDotPattern((TermIdent)t);
-					properties.put(borderPatternName, BorderPattern.dot_pattern);
-					values.put(borderPatternName, value);
-					return true;
-				}
-			} catch (Exception e) {
-			}
-			return false;
+			return genericTermIdent(BorderPattern.class, t, ALLOW_INH, borderPatternName, properties)
+				|| genericTermDotPattern(
+					t, BorderPattern.dot_pattern, borderPatternName, properties, values);
 		}
 
 		@Override
@@ -1396,7 +1419,7 @@ class SupportedCSSImpl implements SupportedCSS {
 
 	SupportedCSSImpl(boolean allowComponentProperties, boolean allowShorthandProperties,
 	                 String prefix, Collection<BrailleCSSExtension> extensions) {
-		this.TOTAL_SUPPORTED_DECLARATIONS = 70 + 2 * extensions.stream().mapToInt(BrailleCSSExtension::getTotalProperties).sum();
+		this.TOTAL_SUPPORTED_DECLARATIONS = 71 + 2 * extensions.stream().mapToInt(BrailleCSSExtension::getTotalProperties).sum();
 		this.setSupportedCSS(allowComponentProperties, allowShorthandProperties, prefix, extensions);
 		this.setOridinals();
 	}
@@ -1511,6 +1534,7 @@ class SupportedCSSImpl implements SupportedCSS {
 		setProperty("border-right-pattern", allowComponentProperties, BorderPattern.NONE);
 		setProperty("border-bottom-pattern", allowComponentProperties, BorderPattern.NONE);
 		setProperty("border-left-pattern", allowComponentProperties, BorderPattern.NONE);
+		setProperty("border-pattern", allowShorthandProperties, BorderPattern.NONE);
 
 		setProperty("border-top-style", allowComponentProperties, BorderStyle.NONE);
 		setProperty("border-right-style", allowComponentProperties, BorderStyle.NONE);
