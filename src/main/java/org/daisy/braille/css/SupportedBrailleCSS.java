@@ -1285,8 +1285,11 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 		                            Map<String, Term<?>> values) {
 			Term<?> term = terms.get(i);
 			String propertyName = names.get(i);
-			return genericTermIdent(type, term, ALLOW_INH, propertyName, properties)
-				|| genericTermDotPattern(
+			if (genericTermIdent(type, term, ALLOW_INH, propertyName, properties)) {
+				values.remove(propertyName);
+				return true;
+			} else
+				return genericTermDotPattern(
 					term, BorderPattern.dot_pattern, propertyName, properties, values);
 		}
 	}
@@ -1301,7 +1304,8 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 		public static final int STYLE = 1;
 		public static final int ALIGN = 2;
 
-		private List<Repeater> repeaters;
+		private final List<Repeater> repeaters;
+		private final Repeater patternRepeater;
 
 		public BorderVariator() {
 			super(3, css);
@@ -1312,6 +1316,7 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 			repeaters.add(new BorderWidthRepeater());
 			repeaters.add(new BorderStyleRepeater(false));
 			repeaters.add(new BorderAlignRepeater());
+			patternRepeater = new BorderPatternRepeater();
 		}
 
 		@Override
@@ -1356,6 +1361,26 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 		public void assignDefaults(Map<String, CSSProperty> properties, Map<String, Term<?>> values) {
 			for (Repeater r : repeaters)
 				r.assignDefaults(properties, values);
+			patternRepeater.assignDefaults(properties, values);
+		}
+
+		private Declaration d = null;
+
+		@Override
+		public void assignTermsFromDeclaration(Declaration d) {
+			super.assignTermsFromDeclaration(d);
+			this.d = d;
+		}
+
+		@Override
+		public boolean vary(Map<String, CSSProperty> properties, Map<String, Term<?>> values) {
+			boolean rv = false;
+			if (super.vary(properties, values))
+				rv = true;
+			if (d != null && (d.size() == 1 || !rv))
+				if (patternRepeater.repeatOverFourTermDeclaration(d, properties, values))
+					rv = true;
+			return rv;
 		}
 	}
 
@@ -1403,22 +1428,18 @@ public class SupportedBrailleCSS extends DeclarationTransformer implements Suppo
 			}
 		}
 
-		private boolean patternVariant(Map<String, CSSProperty> properties, Map<String, Term<?>> values) {
-			if (terms.size() != 1)
-				return false;
-			Term<?> t = terms.get(0);
-			return genericTermIdent(BorderPattern.class, t, ALLOW_INH, borderPatternName, properties)
-				|| genericTermDotPattern(
-					t, BorderPattern.dot_pattern, borderPatternName, properties, values);
-		}
-
 		@Override
 		public boolean vary(Map<String, CSSProperty> properties, Map<String, Term<?>> values) {
 			boolean rv = false;
 			if (super.vary(properties, values))
 				rv = true;
-			if (patternVariant(properties, values))
-				rv = true;
+			if (terms.size() == 1) {
+				Term<?> t = terms.get(0);
+				if (genericTermIdent(BorderPattern.class, t, ALLOW_INH, borderPatternName, properties)
+				    || genericTermDotPattern(
+				           t, BorderPattern.dot_pattern, borderPatternName, properties, values))
+					rv = true;
+			}
 			return rv;
 		}
 	}
